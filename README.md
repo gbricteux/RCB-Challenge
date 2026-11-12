@@ -24,12 +24,6 @@ python club_results.py "https://www.acn-timing.com/?lng=FR#/events/2156365640494
 python club_results.py "https://www.ultratiming.live/en/evenement/run-for-justine-2026/epreuve/5km/resultats" --output participants.csv
 ```
 
-For development or offline use, a saved rendered HTML file is still supported:
-
-```sh
-python club_results.py race.html --members-csv membres.csv --output participants.csv
-```
-
 For ACN Timing results, the time column is detected from `#TIME`, `#NETTO`, or
 `#Officiel`. If none is present, the command-line script asks you to choose the
 time column from the columns returned by the API.

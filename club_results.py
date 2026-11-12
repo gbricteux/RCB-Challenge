@@ -99,73 +99,6 @@ def load_members(csv_text: str) -> list[Member]:
     return members
 
 
-def _cell_text(cell) -> str:
-    return " ".join(cell.stripped_strings)
-
-
-def extract_race_year(html: str) -> int | None:
-    year_match = re.search(r"(?:19|20)\d{2}", BeautifulSoup(html, "html.parser").get_text(" "))
-    return int(year_match.group()) if year_match else None
-
-
-def parse_race_results(html: str) -> list[RaceResult]:
-    soup = BeautifulSoup(html, "html.parser")
-    table = next(
-        (
-            candidate
-            for candidate in soup.find_all("table")
-            if {"data", "table"}.issubset(set(candidate.get("class", [])))
-            or "data-table" in candidate.get("class", [])
-        ),
-        None,
-    )
-    if table is None:
-        raise ValueError('Could not find a table with class="data table"')
-
-    header_row = None
-    headers = []
-    for candidate in table.find_all("tr"):
-        candidate_headers = [normalize_header(_cell_text(cell)) for cell in candidate.find_all(["th", "td"], recursive=False)]
-        if {"pos", "nom", "temps"}.issubset(candidate_headers):
-            header_row = candidate
-            headers = candidate_headers
-            break
-    if header_row is None:
-        raise ValueError("The race table has no header row")
-
-    def column(name: str) -> int:
-        try:
-            return headers.index(name)
-        except ValueError as error:
-            raise ValueError(f"The race table is missing the '{name}' column") from error
-
-    position_index = column("pos")
-    name_index = column("nom")
-    time_index = column("temps")
-    team_index = headers.index("equipe") if "equipe" in headers else None
-    category_index = headers.index("cat") if "cat" in headers else None
-    results = []
-    for row in table.find_all("tr"):
-        if row is header_row:
-            continue
-        cells = row.find_all("td", recursive=False)
-        required_index = max(position_index, name_index, time_index, category_index or 0)
-        if len(cells) <= required_index:
-            continue
-        category = _cell_text(cells[category_index]) if category_index is not None else ""
-        team = _cell_text(cells[team_index]) if team_index is not None else ""
-        results.append(
-            RaceResult(
-                position=_cell_text(cells[position_index]).rstrip("."),
-                source_name=_cell_text(cells[name_index]),
-                finish_time=_cell_text(cells[time_index]),
-                category=category,
-                team=team,
-            )
-        )
-    return results
-
-
 def acn_results_api_url(url: str) -> tuple[str, int | None]:
     match = re.search(r"#/events/[^/]+/ctx/([^/]+)/.*/home/([^/?#]+)", url)
     if not match:
@@ -479,14 +412,7 @@ def fetch_text(url: str) -> str:
     response = requests.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     response.encoding = response.encoding or "utf-8"
-    text = response.text
-    if "data-table" not in text and "class=\"data table\"" not in text:
-        if "<div id=\"app\">" in text or "type=\"module\"" in text:
-            raise ValueError(
-                "The ACN Timing URL returned the JavaScript app shell, not the rendered results table. "
-                "Use a saved rendered HTML file, for example: python club_results.py herou_25_2026.html"
-            )
-    return text
+    return response.text
 
 
 def write_csv(rows: Iterable[dict[str, str]], output: TextIO) -> None:
@@ -498,7 +424,7 @@ def write_csv(rows: Iterable[dict[str, str]], output: TextIO) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Extract club members from an ACN Timing race result")
-    parser.add_argument("race", help="Race-results URL or path to a saved HTML file")
+    parser.add_argument("race", help="Race-results URL")
     parser.add_argument("-o", "--output", type=Path, help="CSV output path; stdout when omitted")
     parser.add_argument("--members-csv", type=Path, help="Use a local members CSV instead of Google Sheets")
     parser.add_argument("--sheet-id", default=SHEET_ID)
@@ -510,19 +436,13 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         members_text = args.members_csv.read_text(encoding="utf-8") if args.members_csv else fetch_text(sheet_csv_url(args.sheet_id, args.members_gid))
-        race_path = Path(args.race)
-        if race_path.is_file():
-            race_text = race_path.read_text(encoding="utf-8")
-            results = parse_race_results(race_text)
-            race_year = extract_race_year(race_text)
+        race_url = args.race.casefold()
+        if "ultratiming" in race_url:
+            results, race_year = fetch_ultratiming_results(args.race)
+        elif "acn-timing" in race_url:
+            results, race_year = fetch_acn_results(args.race)
         else:
-            race_url = args.race.casefold()
-            if "ultratiming" in race_url:
-                results, race_year = fetch_ultratiming_results(args.race)
-            elif "acn-timing" in race_url:
-                results, race_year = fetch_acn_results(args.race)
-            else:
-                raise ValueError("Race URL must contain 'acn-timing' or 'ultratiming'")
+            raise ValueError("Race URL must contain 'acn-timing' or 'ultratiming'")
         rows = match_members(load_members(members_text), results, race_year=race_year)
         if args.output:
             with args.output.open("w", newline="", encoding="utf-8") as output:
