@@ -6,6 +6,7 @@ import io
 import re
 import sys
 import unicodedata
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, TextIO
@@ -155,6 +156,12 @@ def fetch_acn_results(
     url: str, input_fn: Callable[[str], str] | None = None
 ) -> tuple[list[RaceResult], int | None]:
     api_url, race_year = acn_results_api_url(url)
+    if race_year is None:
+        warnings.warn(
+            "Could not determine the race year from the ACN Timing URL",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     response = requests.get(api_url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
     payload = response.json()
@@ -287,55 +294,62 @@ def fetch_ultratiming_results(url: str) -> tuple[list[RaceResult], int | None]:
         page += 1
 
     race_year_match = re.search(r"(?:19|20)\d{2}", url)
-    race_year = int(race_year_match.group()) if race_year_match else None
+    if race_year_match is None:
+        warnings.warn(
+            "Could not determine the race year from the Ultratiming URL",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        race_year = None
+    else:
+        race_year = int(race_year_match.group())
     return results, race_year
 
 
 def category_matches(member: Member, category: str, race_year: int | None = None) -> bool:
     category = normalize_header(category)
     category_sex: str
-    minimum_age: int | None = None
-    maximum_age: int | None = None
-    senior_category = False
     if category in {"msr", "vsr"}:
         category_sex = "m" if category == "msr" else "f"
     else:
         under_age_match = re.fullmatch(r"u(\d+)([mf])", category)
         master_match = re.fullmatch(r"m(\d+)([mf])", category)
-        senior_match = re.fullmatch(r"se([mf])", category)
+        senior_match = re.fullmatch(r"(?:se|sen)([mhfd])", category)
+        acn_category_match = re.fullmatch(r"(jun|esp)([hd])|(ve|ai)([1-4])", category)
         legacy_age_match = re.fullmatch(r"([mfv])(\d+)", category)
         legacy_senior_match = re.fullmatch(r"se([hf])", category)
         if under_age_match:
-            maximum_age = int(under_age_match.group(1))
             category_sex = under_age_match.group(2)
         elif master_match:
-            minimum_age = int(master_match.group(1))
             category_sex = master_match.group(2)
         elif senior_match:
-            category_sex = senior_match.group(1)
-            senior_category = True
+            category_sex = {"m": "m", "h": "m", "f": "f", "d": "f"}[
+                senior_match.group(1)
+            ]
+        elif acn_category_match:
+            youth_code, youth_sex, veteran_code, veteran_number = (
+                acn_category_match.groups()
+            )
+            if youth_code is not None:
+                category_sex = {"h": "m", "d": "f"}[youth_sex]
+            else:
+                category_sex = "m" if veteran_code == "ve" else "f"
         elif legacy_age_match:
-            minimum_age = int(legacy_age_match.group(2))
             category_sex = {"m": "m", "f": "f", "v": "f"}[legacy_age_match.group(1)]
         elif legacy_senior_match:
             category_sex = {"h": "m", "f": "f"}[legacy_senior_match.group(1)]
-            maximum_age = 30
         else:
+            warnings.warn(
+                f"Unrecognized race category: {category or '<empty>'}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return False
     member_sex = normalize_header(member.sex)
     member_sex = {"homme": "m", "h": "m", "male": "m", "monsieur": "m", "femme": "f", "female": "f", "dame": "f", "d": "f"}.get(member_sex, member_sex[:1])
     if member_sex != category_sex:
         return False
-    if minimum_age is None and maximum_age is None:
-        return True
-    if race_year is None or not member.birth_year.isdigit():
-        return False
-    age = race_year - int(member.birth_year)
-    if senior_category:
-        return age >= 18
-    if maximum_age is not None:
-        return age < maximum_age
-    return minimum_age is not None and age >= minimum_age
+    return True
 
 
 def ultratiming_member_matches(member: Member, result: RaceResult) -> bool:
