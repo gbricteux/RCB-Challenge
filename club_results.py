@@ -118,6 +118,15 @@ def clean_api_cell(value: object) -> str:
     return cell.get_text(" ", strip=True)
 
 
+def clean_api_name_cell(value: object) -> tuple[str, str]:
+    cell = BeautifulSoup(str(value or ""), "html.parser")
+    bold = cell.find("b")
+    name = " ".join(bold.stripped_strings) if bold is not None else cell.get_text(" ", strip=True)
+    team_element = cell.find("small")
+    team = team_element.get_text(" ", strip=True) if team_element is not None else ""
+    return name, team
+
+
 def _select_acn_time_index(
     column_names: list[str], input_fn: Callable[[str], str] | None = None
 ) -> int:
@@ -186,13 +195,18 @@ def fetch_acn_results(
         required_index = max(position_index, name_index, time_index, category_index)
         if len(row) <= required_index:
             continue
+        source_name, embedded_team = clean_api_name_cell(row[name_index])
         results.append(
             RaceResult(
                 position=clean_api_cell(row[position_index]).rstrip("."),
-                source_name=clean_api_cell(row[name_index]),
+                source_name=source_name,
                 finish_time=clean_api_cell(row[time_index]),
                 category=clean_api_cell(row[category_index]),
-                team=clean_api_cell(row[team_index]) if team_index is not None else "",
+                team=(
+                    clean_api_cell(row[team_index])
+                    if team_index is not None
+                    else embedded_team
+                ),
             )
         )
     return results, race_year
