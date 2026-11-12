@@ -30,6 +30,10 @@ For development or offline use, a saved rendered HTML file is still supported:
 python club_results.py race.html --members-csv membres.csv --output participants.csv
 ```
 
+For ACN Timing results, the time column is detected from `#TIME`, `#NETTO`, or
+`#Officiel`. If none is present, the command-line script asks you to choose the
+time column from the columns returned by the API.
+
 The output columns are `position`, `name`, `time`, `team`, `race_name`, `birth_year` and `category`.
 
 If a runner is subscribed with team name "RCB" but is not in list of members, a warning is sent in the terminal.

@@ -65,7 +65,7 @@ def load_results(url: str) -> tuple[list[dict[str, str]], int | None, str]:
 st.set_page_config(page_title="Résultats des courses du RCB", page_icon="🏃")
 st.title("Résultats des membres du RCB")
 with st.expander("Cliquer ici pour plus d'information"):
-    st.write("Collez l'URL de la page de résultat d'une course sur les sites ACN Timing ou Ultratiming pour récupérer les résultats des membres du RCB.")
+    st.write("Coller l'URL de la page de résultat d'une course sur les sites ACN Timing ou Ultratiming pour récupérer les résultats des membres du RCB.")
     st.write("exemples : ")
     st.write(" - https://www.acn-timing.com/?lng=NL#/events/2156361345579978/ctx/20261011_brugge/generic/199034_2/home/LIVE2")
     st.write(" - https://www.ultratiming.live/en/evenement/trail-de-la-cochonne-2026/epreuve/13km/resultats")

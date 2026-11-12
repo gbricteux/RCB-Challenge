@@ -8,7 +8,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, TextIO
+from typing import Callable, Iterable, TextIO
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
@@ -92,6 +92,8 @@ def load_members(csv_text: str) -> list[Member]:
         birth_year = row[headers["annee naissance"]].strip()
         sex = row.get(headers.get("sexe", ""), "").strip()
         name = row.get(headers.get("prenom nom", ""), "").strip()
+        if not name:
+            name = f"{last_name} {first_name}"
         if last_name and first_name:
             members.append(Member(last_name, first_name, birth_year, sex, name))
     return members
@@ -182,7 +184,43 @@ def clean_api_cell(value: object) -> str:
     return cell.get_text(" ", strip=True)
 
 
-def fetch_acn_results(url: str) -> tuple[list[RaceResult], int | None]:
+def _select_acn_time_index(
+    column_names: list[str], input_fn: Callable[[str], str] | None = None
+) -> int:
+    for fragment in ("#TIME", "#NETTO", "#OFFICIEL"):
+        fragment_casefolded = fragment.casefold()
+        for index, name in enumerate(column_names):
+            if fragment_casefolded in name.casefold():
+                return index
+
+    available_columns = "\n".join(
+        f"{index + 1}. {name}" for index, name in enumerate(column_names)
+    )
+    prompt = (
+        "Could not identify the ACN results time column. Choose its number or exact "
+        f"column name:\n{available_columns}\nTime column: "
+    )
+    read_input = input if input_fn is None else input_fn
+    while True:
+        try:
+            choice = read_input(prompt).strip()
+        except EOFError as error:
+            raise ValueError("A time column must be selected from the ACN results") from error
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(column_names):
+                return index
+        else:
+            try:
+                return column_names.index(choice)
+            except ValueError:
+                pass
+        print("Please enter a listed column number or its exact name.", file=sys.stderr)
+
+
+def fetch_acn_results(
+    url: str, input_fn: Callable[[str], str] | None = None
+) -> tuple[list[RaceResult], int | None]:
     api_url, race_year = acn_results_api_url(url)
     response = requests.get(api_url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
@@ -198,10 +236,7 @@ def fetch_acn_results(url: str) -> tuple[list[RaceResult], int | None]:
 
     position_index = index_containing("_Pos")
     name_index = index_containing("#NAME")
-    try:
-        time_index = index_containing("#TIME")
-    except ValueError:
-        time_index = index_containing("#NETTO")
+    time_index = _select_acn_time_index(column_names, input_fn)
     category_index = index_containing("#CAT")
     team_index = next((index for index, name in enumerate(column_names) if "#TEAM" in name), None)
 
@@ -223,9 +258,11 @@ def fetch_acn_results(url: str) -> tuple[list[RaceResult], int | None]:
     return results, race_year
 
 
-def fetch_api_results(url: str) -> tuple[list[RaceResult], int | None]:
+def fetch_api_results(
+    url: str, input_fn: Callable[[str], str] | None = None
+) -> tuple[list[RaceResult], int | None]:
     """Backward-compatible name for the ACN Timing results fetcher."""
-    return fetch_acn_results(url)
+    return fetch_acn_results(url, input_fn=input_fn)
 
 
 def ultratiming_api_url(url: str, build_id: str, page: int = 1) -> str:
