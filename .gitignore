@@ -1,4 +1,6 @@
 /.venv
+.google-chrome-profile/
 /__pycache__
 /participants.csv
 /test_club_results.py
+.env

@@ -24,6 +24,17 @@ python club_results.py "https://www.acn-timing.com/?lng=FR#/events/2156365640494
 python club_results.py "https://www.ultratiming.live/en/evenement/run-for-justine-2026/epreuve/5km/resultats" --output participants.csv
 ```
 
+SportEasy is used only to synchronize missing members into the Google Sheet.
+Set `SPORTEASY_USERNAME` and `SPORTEASY_PASSWORD` in `.env`, then run:
+
+```sh
+python club_results.py --sync-sporteasy-members
+```
+For each missing member, enter its sex (`H` or `D`) and confirm whether to add it. The command opens a visible authenticated Chrome session and updates the Membres, Challenge Route, Challenge Trail, and Galopoints tabs.
+
+Google Sheets writes require Google authentication in Chrome; credentials for Sheets are not read from `.env`. On the first run, sign in to Google in the opened Chrome window. The session is saved in `.google-chrome-profile/` and reused on later runs.
+Race extraction always uses the Google Sheet member list.
+
 For ACN Timing results, the time column is detected from `#TIME`, `#NETTO`, or
 `#Officiel`. If none is present, the command-line script asks you to choose the
 time column from the columns returned by the API.
